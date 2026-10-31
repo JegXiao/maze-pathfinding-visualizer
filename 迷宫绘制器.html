@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <title>迷宫阵列编辑器 - 逻辑校验版</title>
+    <style>
+        :root {
+            --bg-color: #f8f9fa;
+            --cell-size: 24px;
+            --primary-color: #007bff;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            background-color: var(--bg-color);
+            margin: 0;
+            padding: 20px;
+            user-select: none;
+        }
+
+        .toolbar {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 20px;
+            background: white;
+            padding: 12px 20px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        .mode-group {
+            display: flex;
+            background: #eee;
+            padding: 4px;
+            border-radius: 8px;
+            gap: 4px;
+        }
+
+        .btn {
+            padding: 8px 14px;
+            font-size: 14px;
+            cursor: pointer;
+            border: none;
+            border-radius: 6px;
+            background-color: #fff;
+            color: #333;
+            transition: all 0.2s;
+            border: 1px solid #ddd;
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        .btn.active {
+            background-color: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+        }
+
+        .btn-check { background-color: #ffc107; color: #000; border: none; font-weight: bold; }
+        .btn-action { background-color: #28a745; color: white; border: none; }
+
+        #grid-container {
+            display: grid;
+            grid-template-columns: repeat(25, var(--cell-size));
+            grid-template-rows: repeat(25, var(--cell-size));
+            gap: 1px;
+            background-color: #444;
+            padding: 4px;
+            border-radius: 4px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.25);
+            position: relative;
+        }
+
+        .cell {
+            width: var(--cell-size);
+            height: var(--cell-size);
+            background-color: #000;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .cell.filled { background-color: #fff; }
+
+        /* 报警动画 */
+        .error-isolated::after { content: "🔶"; }
+        .error-deadend::after { content: "⭕"; }
+
+        .error-isolated::after, .error-deadend::after {
+            position: absolute;
+            font-size: 16px;
+            font-weight: bold;
+            animation: blink 0.5s ease-in-out 6; /* 闪烁6次 */
+            pointer-events: none;
+            z-index: 10;
+        }
+
+        @keyframes blink {
+            0%, 100% { opacity: 0; transform: translateY(0); }
+            50% { opacity: 1; transform: translateY(-2px); }
+        }
+
+        #status-msg {
+            margin-top: 15px;
+            font-size: 14px;
+            height: 20px;
+            text-align: center;
+        }
+    </style>
+</head>
+<body>
+
+    <h2 style="margin-bottom:10px;">迷宫阵列编辑器</h2>
+    <p style="margin-top:0; color:#888;">🔶: 孤立点 | ⭕: 断头路</p>
+
+    <div class="toolbar">
+        <div class="mode-group">
+            <button id="btn-draw" class="btn active" onclick="setMode('draw')">✏️ 画笔</button>
+            <button id="btn-erase" class="btn" onclick="setMode('erase')">🧽 橡皮</button>
+        </div>
+
+        <button class="btn btn-check" onclick="validateMaze()">🔍 智能检验</button>
+        <button class="btn btn-action" onclick="copyGrid()">📋 一键复制</button>
+        <button class="btn" style="background-color: #6c757d; color: white;" onclick="resetGrid()">♻️ 清空</button>
+    </div>
+
+    <div id="grid-container"></div>
+    <div id="status-msg"></div>
+
+    <script>
+        const size = 25;
+        const container = document.getElementById('grid-container');
+        const statusMsg = document.getElementById('status-msg');
+        let isDrawing = false;
+        let currentMode = 'draw';
+
+        function setMode(mode) {
+            currentMode = mode;
+            document.getElementById('btn-draw').classList.toggle('active', mode === 'draw');
+            document.getElementById('btn-erase').classList.toggle('active', mode === 'erase');
+        }
+
+        function initGrid() {
+            container.innerHTML = '';
+            for (let i = 0; i < size * size; i++) {
+                const cell = document.createElement('div');
+                cell.classList.add('cell');
+                cell.addEventListener('mousedown', (e) => { isDrawing = true; applyTool(cell); e.preventDefault(); });
+                cell.addEventListener('mouseenter', () => { if (isDrawing) applyTool(cell); });
+                container.appendChild(cell);
+            }
+        }
+
+        function applyTool(cell) {
+            cell.classList.remove('error-isolated', 'error-deadend');
+            if (currentMode === 'draw') {
+                cell.classList.add('filled');
+            } else {
+                cell.classList.remove('filled');
+            }
+        }
+
+        window.addEventListener('mouseup', () => isDrawing = false);
+
+        function validateMaze() {
+            const cells = document.querySelectorAll('.cell');
+            let isolatedCount = 0;
+            let deadEndCount = 0;
+
+            cells.forEach(c => c.classList.remove('error-isolated', 'error-deadend'));
+
+            cells.forEach((cell, i) => {
+                if (!cell.classList.contains('filled')) return;
+
+                const r = Math.floor(i / size);
+                const c = i % size;
+                
+                const neighbors = [
+                    {r: r-1, c: c}, {r: r+1, c: c}, 
+                    {r: r, c: c-1}, {r: r, c: c+1}
+                ];
+
+                // 计算周围白色块的数量
+                let connectionCount = 0;
+                neighbors.forEach(n => {
+                    if (n.r >= 0 && n.r < size && n.c >= 0 && n.c < size) {
+                        if (cells[n.r * size + n.c].classList.contains('filled')) {
+                            connectionCount++;
+                        }
+                    }
+                });
+
+                if (connectionCount === 0) {
+                    isolatedCount++;
+                    cell.classList.add('error-isolated');
+                } else if (connectionCount === 1) {
+                    deadEndCount++;
+                    cell.classList.add('error-deadend');
+                }
+            });
+
+            if (isolatedCount > 0 || deadEndCount > 0) {
+                statusMsg.style.color = "#d9534f";
+                statusMsg.innerText = `检测到 ${isolatedCount} 个孤立点 (🔶) 和 ${deadEndCount} 个断头路 (⭕)`;
+                setTimeout(() => {
+                    cells.forEach(c => c.classList.remove('error-isolated', 'error-deadend'));
+                }, 3000);
+            } else {
+                statusMsg.style.color = "#28a745";
+                statusMsg.innerText = "校验通过！路线逻辑完美。";
+            }
+        }
+
+        function copyGrid() {
+            const cells = document.querySelectorAll('.cell');
+            let result = "";
+            cells.forEach((cell, index) => {
+                result += cell.classList.contains('filled') ? "⬜️" : "⬛️";
+                if ((index + 1) % size === 0) result += "\n";
+            });
+            navigator.clipboard.writeText(result).then(() => {
+                statusMsg.style.color = "#28a745";
+                statusMsg.innerText = "复制成功！";
+            });
+        }
+
+        function resetGrid() {
+            if(confirm("确定清空吗？")) {
+                document.querySelectorAll('.cell').forEach(c => c.classList.remove('filled', 'error-isolated', 'error-deadend'));
+                statusMsg.innerText = "";
+            }
+        }
+
+        initGrid();
+    </script>
+</body>
+</html>
